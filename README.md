@@ -13,3 +13,34 @@ This project implements a high-concurrency server using the "One-Thread-One-Loop
 ## Requirements
 - **C++11 or later**: This project uses features of C++11 and above.
 - **Linux-based System**: Recommended for running this server due to its reliance on Linux-specific APIs for event handling.
+
+## Modules
+
+### Server Module
+
+#### Buffer Module
+
+#### Socket Module
+
+#### Channel Module
+
+#### Connection Module
+
+#### Acceptor Module
+
+#### TimerQueue Module
+
+#### Poller Module
+
+#### EventLoop Module
+
+#### TCPServer Module
+
+### Protocol Module
+
+
+
+
+
+
+
