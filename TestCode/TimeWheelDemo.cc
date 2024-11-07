@@ -69,9 +69,12 @@ public:
 
 class TimeWheel
 {
+    using SharedPtrTimer = std::shared_ptr<Timer>;
+    using WeakPtrTimer = std::weak_ptr<Timer>;
+
 private:
     std::vector<std::list<std::shared_ptr<Timer>>> _Wheel;
-    std::unordered_map<uint64_t, std::shared_ptr<Timer>> _TimerMap;
+    std::unordered_map<uint64_t, std::weak_ptr<Timer>> _TimerMap;
     std::unordered_set<uint64_t> _TimerIDSet;
     uint64_t _TimerID;
     int _CurIndex;
@@ -100,6 +103,11 @@ public:
         }
     }
 
+    bool HasTimer(uint64_t TimerID)
+    {
+        return _TimerIDSet.find(TimerID) != _TimerIDSet.end();
+    }
+
     uint64_t AddTimer(int Timeout, OnTimerCallback cb, ReleaseCallback releaseCb)
     {
         if (Timeout < 0 || Timeout > _MaxTimeout)
@@ -107,29 +115,47 @@ public:
             return -1;
         }
 
-        std::shared_ptr<Timer> timer = std::make_shared<Timer>(_TimerID++, Timeout);
+        SharedPtrTimer timer = std::make_shared<Timer>(_TimerID++, Timeout);
         timer->SetTimerCallback(cb);
         timer->SetReleaseCallback(releaseCb);
 
+        // 保存TimerID
+        // 弱引用既不会增加引用计数，也不会阻止对象被释放
+        // 同时可以检测对象是否已经被释放
+        _TimerMap[_TimerID] = WeakPtrTimer(timer);
         int index = (_CurIndex + Timeout / _Interval) % _WheelSize;
         _Wheel[index].push_back(timer);
-        _TimerMap[timer->GetTimerID()] = timer;
-        _TimerIDSet.insert(timer->GetTimerID());
-
         return timer->GetTimerID();
+    }
+
+    void TimerRefresh(uint64_t TimerID)
+    {
+        auto iter = _TimerMap.find(TimerID);
+        assert(iter != _TimerMap.end());
+        // weak_ptr.lock() 返回一个shared_ptr对象
+        // 如果对象已经被释放，返回一个空的shared_ptr
+        int newTimeout = iter->second.lock()->GetTimeout();
+        int newIndex = (_CurIndex + newTimeout / _Interval) % _WheelSize;
+        if (newIndex == _CurIndex)
+        {
+            return;
+        }
+        _Wheel[newIndex].push_back(iter->second.lock());
     }
 
     void CancelTimer(uint64_t TimerID)
     {
-        if (_TimerIDSet.find(TimerID) == _TimerIDSet.end())
+        if (!HasTimer(TimerID))
         {
             return;
         }
 
-        std::shared_ptr<Timer> timer = _TimerMap[TimerID];
-        timer->Cancel();
-        _TimerMap.erase(TimerID);
-        _TimerIDSet.erase(TimerID);
+        auto weakTimer = _TimerMap[TimerID];
+        SharedPtrTimer timer = weakTimer.lock();
+        if (timer)
+        {
+            timer->Cancel();
+        }
     }
 
     void Tick()
@@ -145,4 +171,7 @@ public:
 
         _CurIndex = (_CurIndex + 1) % _WheelSize;
     }
+
+
+
 };
