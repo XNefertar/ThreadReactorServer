@@ -16,13 +16,13 @@ class Timer
 private:
     int _Timeout;
     bool _isCanceled;
-    uint64_t _TimerID;
+    uint64_t TimerID;
     OnTimerCallback _TimerCallback;
     ReleaseCallback _ReleaseCallback;
 
 public:
     Timer(uint64_t TimerID, int Timeout)
-        : _TimerID(TimerID),
+        : TimerID(TimerID),
           _Timeout(Timeout),
           _isCanceled(false)
     {
@@ -57,7 +57,7 @@ public:
 
     uint64_t GetTimerID() const
     {
-        return _TimerID;
+        return TimerID;
     }
 
     int GetTimeout() const
@@ -77,20 +77,16 @@ private:
     std::vector<std::list<std::shared_ptr<Timer>>> _Wheel;
     std::unordered_map<uint64_t, std::weak_ptr<Timer>> _TimerMap;
     std::unordered_set<uint64_t> _TimerIDSet;
-    uint64_t _TimerID;
     int _CurIndex;
     int _WheelSize;
-    int _Interval;
     int _MaxTimeout;
 
 public:
-    TimeWheel(int Interval = 3, int MaxTimeout = 3600)
+    TimeWheel(int MaxTimeout = 3600)
         : _Wheel(WHEEL_SIZE),
           _WheelSize(WHEEL_SIZE),
-          _Interval(Interval),
           _MaxTimeout(MaxTimeout),
-          _CurIndex(0),
-          _TimerID(0)
+          _CurIndex(0)
     {
     }
 
@@ -117,16 +113,16 @@ public:
             return -1;
         }
 
-        SharedPtrTimer timer = std::make_shared<Timer>(_TimerID++, Timeout);
+        SharedPtrTimer timer = std::make_shared<Timer>(TimerID, Timeout);
         timer->SetTimerCallback(cb);
         // timer->SetReleaseCallback(std::bind(&TimeWheel::RemoveWeakPtr, this, std::placeholders::_1));
         timer->SetReleaseCallback([this, TimerID]() { this->RemoveWeakPtr(TimerID); });
-
+        // _TimerIDSet.insert(TimerID);
         // 保存TimerID
         // 弱引用既不会增加引用计数，也不会阻止对象被释放
         // 同时可以检测对象是否已经被释放
-        _TimerMap[_TimerID] = WeakPtrTimer(timer);
-        int index = (_CurIndex + Timeout / _Interval) % _WheelSize;
+        _TimerMap[TimerID] = WeakPtrTimer(timer);
+        int index = (_CurIndex + Timeout) % _WheelSize;
         _Wheel[index].push_back(timer);
         return timer->GetTimerID();
     }
@@ -138,7 +134,7 @@ public:
         // weak_ptr.lock() 返回一个shared_ptr对象
         // 如果对象已经被释放，返回一个空的shared_ptr
         int newTimeout = iter->second.lock()->GetTimeout();
-        int newIndex = (_CurIndex + newTimeout / _Interval) % _WheelSize;
+        int newIndex = (_CurIndex + newTimeout) % _WheelSize;
         if (newIndex == _CurIndex)
         {
             return;
@@ -216,7 +212,7 @@ int main()
     int id = 3;
     /*std::bind(del, t) 构建适配了⼀个释放函数，作为定时任务执⾏函数*/
     /*这⾥其实就是添加了⼀个5秒后执⾏的定时任务，任务是销毁t指针指向的空间*/
-    tq.AddTimer(0, 5, std::bind(del, t));
+    tq.AddTimer(id, 5, std::bind(del, t));
     /*按理说这个任务5s后就会被执⾏，析构，但是因为循环内总是在刷新任务，也就是⼆次添加任
    务，
     因此，它的计数总是>0，不会被释放，之后最后⼀个任务对象shared_ptr被释放才会真正析构*/
