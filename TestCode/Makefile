@@ -2,7 +2,7 @@
 CC = g++
 CFLAGS = -std=c++11 -lpthread
 TARGET = test
-SRC = RegexMatching.cc
+SRC = CustomAny.cc
 
 # 使用变量
 $(TARGET):$(SRC)
