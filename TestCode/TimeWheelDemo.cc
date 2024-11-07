@@ -205,7 +205,7 @@ void del(TimerTest *t)
 int main()
 {
     /*创建⼀个固定5s的定时任务队列， 每个添加的任务将在被添加5s后执⾏*/
-    TimeWheel tq;
+    TimeWheel tq(5);
     /*new 了⼀个对象*/
     TimerTest *t = new TimerTest(10);
     /*随便设置了⼀个定时器ID*/
@@ -235,5 +235,6 @@ int main()
             break;
         }
     }
+    delete t;
     return 0;
 }
