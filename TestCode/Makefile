@@ -2,7 +2,7 @@
 CC = g++
 CFLAGS = -std=c++11 -lpthread
 TARGET = test
-SRC = TimeWheelDemo.cc
+SRC = RegexMatching.cc
 
 # 使用变量
 $(TARGET):$(SRC)
