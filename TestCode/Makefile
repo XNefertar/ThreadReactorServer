@@ -1,5 +1,13 @@
-test:TimeWheelDemo.cc
-	g++ -o test TimeWheelDemo.cc -std=c++11 -lpthread
-.PHNOY:clean
+# 定义变量
+CC = g++
+CFLAGS = -std=c++11 -lpthread
+TARGET = test
+SRC = TimeWheelDemo.cc
+
+# 使用变量
+$(TARGET):$(SRC)
+	$(CC) -o $(TARGET) $(SRC) $(CFLAGS)
+
+.PHONY: clean
 clean:
-	rm -rf test
+	rm -rf $(TARGET)
