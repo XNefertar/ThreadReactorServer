@@ -34,7 +34,7 @@ public:
     uint32_t GetEvents() const { return _events; }
     uint32_t GetRevents() const { return _revents; }
 
-    void SetRevents(uint32_t revents) { _revents = revents; }
+    void SetRevents(uint32_t revents) { _revents = revents; } // 设置活动事件
     void SetEvents(uint32_t events) { _events = events; }
 
     void SetReadCallback(const EventCallback& cb)   { _readCallback = cb; }
