@@ -60,7 +60,7 @@ private:
     Wheel _Wheel;
     TimerMap _TimerMap;
 
-    // EventLoop *_loop;
+    EventLoop *_Loop;
     // 定时器描述符
     int _Timerfd; 
     std::unique_ptr<Channel> _TimerChannel;
@@ -73,12 +73,29 @@ private:
     void RunOntimeTask();
     void OnTimerTask();
     void TimerAddInLoop(uint64_t id, uint32_t delay, const TaskFunc &cb);
+    void TimerRefreshInLoop(uint64_t id);
     void TimerCancelInLoop(uint64_t id);
 
 public:
-    
+    TimerWheel(EventLoop *Loop)
+        : _Capacity(60),
+          _Tick(0),
+          _Wheel(_Capacity),
+          _Loop(Loop),
+          _Timerfd(CreateTimerfd()),
+          _TimerChannel(new Channel(Loop, _Timerfd))
+    {
+        _TimerChannel->SetReadCallback(std::bind(&TimerWheel::OnTimerTask, this));
+        _TimerChannel->EnableRead();
+    }
 
+    void TimerAdd(uint64_t id, uint32_t delay, const TaskFunc &cb);
+    void TimerRefresh(uint64_t id);
+    void TimerCancel(uint64_t id);
 
+    bool HasTimer(uint64_t id){
+        return _TimerMap.find(id) != _TimerMap.end();
+    }
 };
 
 int TimerWheel::CreateTimerfd()
@@ -144,6 +161,15 @@ void TimerWheel::TimerAddInLoop(uint64_t id, uint32_t delay, const TaskFunc &cb)
     _TimerMap[id] = WeakTask(pt);
 }
 
+void TimerWheel::TimerRefreshInLoop(uint64_t id){
+    auto iter = _TimerMap.find(id);
+    if(iter == _TimerMap.end()) return;
+    SharedPtr pt = iter->second.lock();
+    int delay = pt->GetTimeout();
+    int new_pos = (delay + _Tick) % _Capacity;
+    _Wheel[new_pos].push_back(pt); 
+}
+
 void TimerWheel::TimerCancelInLoop(uint64_t id){
     auto it = _TimerMap.find(id);
     if(it == _TimerMap.end()){
@@ -153,6 +179,20 @@ void TimerWheel::TimerCancelInLoop(uint64_t id){
     if (pt){
         pt->Cancel();
     }
+}
+
+void TimerWheel::TimerAdd(uint64_t id, uint32_t delay, const TaskFunc &cb){
+    auto iter = _TimerMap.find(id);
+    if(iter == _TimerMap.end()) return;
+    _Loop->RunInLoop(std::bind(&TimerWheel::TimerAddInLoop, this, id, delay, cb));
+}
+
+void TimerWheel::TimerRefresh(uint64_t id){
+    _Loop->RunInLoop(std::bind(&TimerWheel::TimerRefreshInLoop, this, id));
+}
+
+void TimerWheel::TimerCancel(uint64_t id){
+    _Loop->RunInLoop(std::bind(&TimerWheel::TimerCancelInLoop, this, id));
 }
 
 #endif // __TIMER_WHHEL_HPP__
