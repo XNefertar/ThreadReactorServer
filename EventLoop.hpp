@@ -87,18 +87,18 @@ public:
         _EventChannel->EnableRead();
     }
 
-        void Start(){
-            for(;;){
-                std::vector<Channel*> Activities;
-                _Poller.Poll(Activities);
+    void Start(){
+        for(;;){
+            std::vector<Channel*> Activities;
+            _Poller.Poll(Activities);
 
-                for(auto &channel : Activities){
-                    channel->HandleEvent();
-                }
-
-                RunAllTask();
+            for(auto &channel : Activities){
+                channel->HandleEvent();
             }
+
+            RunAllTask();
         }
+    }
 
     bool IsInLoop(){
         return (_ThreadID == std::this_thread::get_id());
@@ -137,6 +137,24 @@ public:
     void TimerRefresh(uint64_t id){ return _TimerWheel.TimerRefresh(id); }
     void TimerCancel(uint64_t id) { return _TimerWheel.TimerCancel(id); }
     bool HasTimer(uint64_t id) { return _TimerWheel.HasTimer(id); }
+};
+
+class LoopThread
+{
+private:
+    std::mutex _Mutex;
+    
+
+};
+
+
+class LoopThreadPool
+{
+private:
+    int _ThreadCount;
+    int _NextIdx;
+    EventLoop* _Loop;
+
 };
 
 
