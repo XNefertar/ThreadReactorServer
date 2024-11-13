@@ -11,6 +11,7 @@
 #include <sys/timerfd.h>
 #include <cstdio>
 #include "Channel.hpp"
+#include "EventLoop.hpp"
 
 using TaskFunc = std::function<void()>;
 using ReleaseFunc = std::function<void()>;

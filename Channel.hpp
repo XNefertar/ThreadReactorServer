@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/epoll.h>
 #include <sys/types.h>
+#include "EventLoop.hpp"
 
 class Channel
 {
@@ -70,11 +71,11 @@ public:
 
 void Channel::Update()
 {
-    _loop->UpdateChannel(this);
+    _loop->UpdateEvent(this);
 }
 void Channel::Remove()
 {
-    _loop->RemoveChannel(this);
+    _loop->RemoveEvent(this);
 }
 
 
