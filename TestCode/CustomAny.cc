@@ -5,33 +5,25 @@
 #include <typeindex>
 #include <unistd.h>
 
+// Any 类
+// 基于 类型擦除 设计模式实现
+// 任意类型的数据存储和访问
+// 隐藏类型信息，对外仅暴露接口
+// 将 静态多态（编译时多态） 转为 动态多态（运行时多态）
+// 静态多态：模板
+// 动态多态：虚函数
+// 通过虚函数实现动态多态，实现类型擦除
+
+// 结构组成
+// 公共接口（Interface），这里是 PlaceHolder 类
+// 具体包装类（Concrete  Class），这里是 Holder 类
+// 外层包装类（Wrapper），这里是 Any 类
+// 一般都会持有一个 PlaceHolder 类的指针，通过虚函数实现动态多态
+
 class Any
 {
-public:
-    Any(): _content(nullptr){}
-
-    template <typename T>
-    Any(const T &data) : _content(new Holder<T>(data)) {}
-    Any(const Any &other) : _content(other._content ? other._content->clone() : nullptr) {}
-    ~Any()
-    {
-        if (_content)
-            delete _content;
-    }
-
-    const std::type_info &type(){
-        return _content ? _content->type() : typeid(void);
-    }
-
-    template<typename T>
-    T* get(){
-        assert(typeid(T) == _content->type());
-        return &(((Holder<T>*)_content)->_data);
-    }
-
-
-
 private:
+    
     class PlaceHolder
     {
     public:
@@ -61,6 +53,30 @@ private:
 
 private:
     PlaceHolder* _content;
+
+public:
+    Any(): _content(nullptr){}
+
+    template <typename T>
+    Any(const T &data) : _content(new Holder<T>(data)) {}
+    Any(const Any &other) : _content(other._content ? other._content->clone() : nullptr) {}
+    ~Any()
+    {
+        if (_content)
+            delete _content;
+    }
+
+    // 若 content 不为空，则返回 content 的类型信息，否则返回 void 类型信息
+    const std::type_info &type(){
+        return _content ? _content->type() : typeid(void);
+    }
+
+    // 获取 data 指针
+    template<typename T>
+    T* get(){
+        assert(typeid(T) == _content->type());
+        return &(static_cast<Holder<T>*>(_content)->_data);
+    }
 };
 
 class Test{
@@ -80,6 +96,7 @@ public:
 
 int main()
 {
+    // 限定作用域
     {
         int a = 10;
         double b = 3.14;
