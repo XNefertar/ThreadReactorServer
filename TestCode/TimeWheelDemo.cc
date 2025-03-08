@@ -14,10 +14,15 @@ using ReleaseCallback = std::function<void()>;
 class Timer
 {
 private:
+    // 定时器超时时间
     int _Timeout;
+    // 定时器是否被取消的标志
     bool _isCanceled;
+    // 定时器ID，唯一标识符
     uint64_t TimerID;
+    // 定时器到期时的回调函数
     OnTimerCallback _TimerCallback;
+    // 定时器释放时的回调函数
     ReleaseCallback _ReleaseCallback;
 
 public:
@@ -25,43 +30,32 @@ public:
         : TimerID(TimerID),
           _Timeout(Timeout),
           _isCanceled(false)
-    {
-    }
+    {}
 
-    ~Timer()
-    {
+    ~Timer(){
         if (_ReleaseCallback)
-        {
             _ReleaseCallback();
-        }
         if (_TimerCallback && !_isCanceled)
-        {
             _TimerCallback();
-        }
     }
 
-    void SetTimerCallback(const OnTimerCallback &cb)
-    {
-        _TimerCallback = cb;
+    void SetTimerCallback(const OnTimerCallback &callback) {
+        _TimerCallback = callback; 
     }
 
-    void SetReleaseCallback(const ReleaseCallback &cb)
-    {
-        _ReleaseCallback = cb;
+    void SetReleaseCallback(const ReleaseCallback &callback){
+        _ReleaseCallback = callback;
     }
 
-    void Cancel()
-    {
+    void Cancel(){
         _isCanceled = true;
     }
 
-    uint64_t GetTimerID() const
-    {
+    uint64_t GetTimerID() const{
         return TimerID;
     }
 
-    int GetTimeout() const
-    {
+    int GetTimeout() const{
         return _Timeout;
     }
 };
@@ -74,11 +68,22 @@ class TimeWheel
     using WeakPtrTimer = std::weak_ptr<Timer>;
 
 private:
+    // 时间轮，每个槽是一个定时器列表
     std::vector<std::list<std::shared_ptr<Timer>>> _Wheel;
+    // 定时器映射
+    // 回调函数由一个 Timer 对象管理
+    // TiemrWheel 如果使用 shared_ptr 会导致循环引用问题
+    // 所以这里使用了 weak_ptr 指向一个 Timer 对象
     std::unordered_map<uint64_t, std::weak_ptr<Timer>> _TimerMap;
-    std::unordered_set<uint64_t> _TimerIDSet;
+    // 定时器ID集合
+    // std::unordered_set<uint64_t> _TimerIDSet;
+    // 当前时间轮的索引
     int _CurIndex;
+    // 上一个时间轮的索引
+    int _PreIndex;
+    // 时间轮大小
     int _WheelSize;
+    // 最大超时时间
     int _MaxTimeout;
 
 public:
@@ -86,43 +91,50 @@ public:
         : _Wheel(WHEEL_SIZE),
           _WheelSize(WHEEL_SIZE),
           _MaxTimeout(MaxTimeout),
-          _CurIndex(0)
+          _CurIndex(0),
+          _PreIndex(0)
     {
     }
 
-    ~TimeWheel()
-    {
-        for (auto &list : _Wheel)
-        {
-            for (auto &timer : list)
-            {
+    ~TimeWheel(){
+        for (auto &list : _Wheel){
+            for (auto &timer : list){
                 timer->Cancel();
             }
         }
     }
 
-    bool HasTimer(uint64_t TimerID)
-    {
-        return _TimerIDSet.find(TimerID) != _TimerIDSet.end();
+    bool HasTimer(uint64_t TimerID){
+        return _TimerMap.find(TimerID) != _TimerMap.end();
     }
 
-    uint64_t AddTimer(int TimerID, int Timeout, OnTimerCallback cb)
-    {
-        if (Timeout < 0 || Timeout > _MaxTimeout)
-        {
+    uint64_t AddTimer(int TimerID, int Timeout, OnTimerCallback callback){
+        if (Timeout < 0 || Timeout > _MaxTimeout){
             return -1;
         }
 
         SharedPtrTimer timer = std::make_shared<Timer>(TimerID, Timeout);
-        timer->SetTimerCallback(cb);
+        // callback 为定时器到期时的回调函数
+        timer->SetTimerCallback(callback);
         // timer->SetReleaseCallback(std::bind(&TimeWheel::RemoveWeakPtr, this, std::placeholders::_1));
+        // 使用 lambda 表达式初始化一个函数对象
         timer->SetReleaseCallback([this, TimerID]() { this->RemoveWeakPtr(TimerID); });
         // _TimerIDSet.insert(TimerID);
         // 保存TimerID
         // 弱引用既不会增加引用计数，也不会阻止对象被释放
         // 同时可以检测对象是否已经被释放
         _TimerMap[TimerID] = WeakPtrTimer(timer);
+        // _TimerIDSet.insert(TimerID);
+
+        // std::cout << "TEST START" << std::endl;
+        // std::cout << "_TimerMap.size() = " << _TimerMap.size() << std::endl;
+        // std::cout << "TEST END" << std::endl;
+
+        // 时间轮
+        // 可以看作是一个环形数组
         int index = (_CurIndex + Timeout) % _WheelSize;
+        // 向某个时间轮槽中插入定时器
+        // list.push_back()
         _Wheel[index].push_back(timer);
         return timer->GetTimerID();
     }
@@ -131,45 +143,99 @@ public:
     {
         auto iter = _TimerMap.find(TimerID);
         assert(iter != _TimerMap.end());
-        // weak_ptr.lock() 返回一个shared_ptr对象
-        // 如果对象已经被释放，返回一个空的shared_ptr
-        int newTimeout = iter->second.lock()->GetTimeout();
-        int newIndex = (_CurIndex + newTimeout) % _WheelSize;
-        if (newIndex == _CurIndex)
+        std::shared_ptr<Timer> timer = iter->second.lock();
+        if (timer)
         {
-            return;
+            int timeout = timer->GetTimeout();
+            int index = (_CurIndex + timeout) % _WheelSize;
+            _Wheel[index].push_back(timer);
         }
-        _Wheel[newIndex].push_back(iter->second.lock());
+        _PreIndex = _CurIndex;
     }
 
-    void CancelTimer(uint64_t TimerID)
-    {
-        if (!HasTimer(TimerID))
-        {
+    void CancelTimer(uint64_t TimerID){
+        if (!HasTimer(TimerID)){
             return;
         }
 
         auto weakTimer = _TimerMap[TimerID];
         SharedPtrTimer timer = weakTimer.lock();
-        if (timer)
-        {
+        if (timer){
             timer->Cancel();
         }
     }
 
-    void RemoveWeakPtr(uint64_t TimerID)
-    {
+    void RemoveWeakPtr(uint64_t TimerID){
         auto iter = _TimerMap.find(TimerID);
-        if (iter != _TimerMap.end())
-        {
+        if (iter != _TimerMap.end()){
             _TimerMap.erase(iter);
         }
     }
 
+    // void RunOntimeTask()
+    // {
+    //     _CurIndex = (_CurIndex + 1) % _WheelSize;
+    //     auto &timers = _Wheel[_CurIndex];
+    //     for (auto &timer : timers)
+    //     {
+    //         if (timer)
+    //         {
+    //             timer->Cancel();
+    //             _TimerMap.erase(timer->GetTimerID());
+    //             _TimerIDSet.erase(timer->GetTimerID());
+    //         }
+    //     }
+    //     timers.clear();
+    // }
+
     void RunOntimeTask()
     {
+        // std::cout << "TEST START" << std::endl;
+        // std::cout << "_CurIndex = " << _CurIndex << std::endl;
+        // std::cout << "_CurIndex = " << _CurIndex << std::endl;
+        
+        // if(_Wheel[_CurIndex].empty()){
+            // std::cout << "Wheel[_CurIndex] is empty." << std::endl;
+            // return;
+        // }
+        
+        // std::cout << "TEST END" << std::endl;
+        
+        auto &timers = _Wheel[_CurIndex];
+
         _CurIndex = (_CurIndex + 1) % _WheelSize;
-        _Wheel[_CurIndex].clear();
+        // for (auto &timer : timers)
+        // {
+        //     if (timer)
+        //     {
+        //         if (!_TimerIDSet.erase(timer->GetTimerID())) {
+        //             continue;
+        //         }
+        //         std::cout << "Timer ID: " << timer->GetTimerID() << std::endl;
+        //         _TimerMap.erase(timer->GetTimerID());
+
+        //         std::cout << "TEST START" << std::endl;
+        //         std::cout << __LINE__ << std::endl;
+        //         std::cout << "Callback function is called" << std::endl;
+        //         std::cout << "TEST END" << std::endl;
+
+        //         timer->Cancel();  // 取消定时器
+        //     }
+        // }
+        timers.clear();
+    }
+
+    int GetCurIndex(){
+        return this->_CurIndex;
+    }
+    int GetWheelSize(){
+        return this->_WheelSize;
+    }
+    int GetMaxTimeout(){
+        return this->_MaxTimeout;
+    }
+    int GetPreIndex(){
+        return this->_PreIndex;
     }
 
     // void Tick()
@@ -199,6 +265,7 @@ public:
 
 void del(TimerTest *t)
 {
+    std::cout << "定时任务被执⾏，释放任务对象!\n";
     delete t;
 }
 
@@ -212,10 +279,12 @@ int main()
     int id = 3;
     /*std::bind(del, t) 构建适配了⼀个释放函数，作为定时任务执⾏函数*/
     /*这⾥其实就是添加了⼀个5秒后执⾏的定时任务，任务是销毁t指针指向的空间*/
-    tq.AddTimer(id, 5, std::bind(del, t));
+    if(tq.AddTimer(id, 5, std::bind(del, t)) == -1){
+        std::cout << "ERROR" << std::endl;
+        std::cout << id << "号定时任务添加失败!" << std::endl;
+    }
     /*按理说这个任务5s后就会被执⾏，析构，但是因为循环内总是在刷新任务，也就是⼆次添加任
-   务，
-    因此，它的计数总是>0，不会被释放，之后最后⼀个任务对象shared_ptr被释放才会真正析构*/
+   务，因此，它的计数总是>0，不会被释放，之后最后⼀个任务对象shared_ptr被释放才会真正析构*/
     for (int i = 0; i < 5; i++)
     {
         sleep(1);
@@ -226,15 +295,18 @@ int main()
     std::cout << "刷新定时任务停⽌, 5s后释放任务将被执⾏\n";
     while (1)
     {
-        std::cout << "--------------------\n";
+        std::cout << "Time has passed: " << tq.GetCurIndex() - tq.GetPreIndex() << std::endl;
         sleep(1);
         tq.RunOntimeTask(); // 每秒调⽤⼀次，模拟定时器
         if (tq.HasTimer(id) == false)
         {
+            
             std::cout << "定时任务已经被执⾏完毕！\n";
             break;
         }
     }
-    delete t;
+    
+    // sleep(5);
+
     return 0;
 }
