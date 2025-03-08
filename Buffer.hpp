@@ -16,63 +16,83 @@ private:
     ssize_t _writeIndex;
 
 public:
+    // Constructor
     Buffer(ssize_t size = 1024)
         : _buffer(size), _readIndex(0), _writeIndex(0)
     {}
+    // destructor
     ~Buffer() = default;
 
+    // 获取缓冲区指针的方法
     char *GetBegin()      { return &_buffer[0]; }
-    char *GetWriteBegin() { return &_buffer[_writeIndex]; }
-    char *GetReadBegin()  { return &_buffer[_readIndex]; }
+    char *GetWriteIndex() { return &_buffer[_writeIndex]; }
+    char *GetReadIndex()  { return &_buffer[_readIndex]; }
+
+    // 获取缓冲区大小的方法
+    ssize_t GetSize() { return _buffer.size(); }
+    // 获取缓冲区的可读大小
+    // 返回尾部剩余空间
     uint64_t GetTailRestSize() { return _buffer.size() - _writeIndex; }
+    // 获取缓冲区的可读大小
     uint64_t GetReadableSize() { return _writeIndex - _readIndex; }
+    // 获取缓冲区的头部剩余空间
     uint64_t GetHeadRestSize() { return _readIndex; }
 
     void UpdateReadIndex(uint64_t len)  { _readIndex += len; }
     void UpdateWriteIndex(uint64_t len) { _writeIndex += len; }
 
     // 考虑扩容
-    void EnsureWirteSize(uint64_t len){
+    void ExpansionWriteSize(uint64_t len){
+        // 如果缓冲区尾部剩余空间足够
+        // 则无需扩容
         if(len <= GetTailRestSize()) return;
 
+        // 如果尾部剩余空间不够
+        // 但是头部剩余空间加尾部剩余空间足够
+        // 则将数据搬移到头部剩余空间
         if(len <= GetHeadRestSize() + GetTailRestSize()){
-            std::copy(GetReadBegin(), GetWriteBegin(), GetBegin());
+            // std::copy(InputIterator begin, InputIterator end, OutputIterator destination);
+            std::copy(GetReadIndex(), GetWriteIndex(), GetBegin());
             _writeIndex -= _readIndex;
             _readIndex = 0;
         }
         else{
+            // 如果头部剩余空间加尾部剩余空间不够
+            // 则扩容
             DBG_LOG("Buffer resize %d", _writeIndex + len);
             _buffer.resize(_writeIndex + len);
         }
     }
 
+    // 
     void Write(const void* data, uint64_t len){
         if(len == 0) return;
-        EnsureWirteSize(len);
+        // 考虑是否需要扩容
+        ExpansionWriteSize(len);
         const char* str = static_cast<const char*>(data);
-        std::copy(str, str + len, GetWriteBegin());
+        std::copy(str, str + len, GetWriteIndex());
     }
-
     void WritePush(const char* data, uint64_t len){
         Write(data, len);
         UpdateWriteIndex(len);
     }
 
+
     void WriteString(std::string str){
         Write(str.c_str(), str.size());
     }
-
     void WriteStringPush(std::string str){
         WritePush(str.c_str(), str.size());
     }
 
+    
     void WriteBuffer(Buffer& buffer){
-        Write(buffer.GetReadBegin(), buffer.GetReadableSize());
+        Write(buffer.GetReadIndex(), buffer.GetReadableSize());
+    }
+    void WriteBufferPush(Buffer& buffer){
+        WritePush(buffer.GetReadIndex(), buffer.GetReadableSize());
     }
 
-    void WriteBufferPush(Buffer& buffer){
-        WritePush(buffer.GetReadBegin(), buffer.GetReadableSize());
-    }
 
     void Read(const void* OutBuffer, uint64_t len){
         if(len == 0) return;
@@ -81,13 +101,13 @@ public:
             return;
         }
         const char* str = static_cast<const char*>(OutBuffer);
-        std::copy(GetReadBegin(), GetReadBegin() + len, str);
+        std::copy(GetReadIndex(), GetReadIndex() + len, str);
     }
-
     void ReadPop(const void* OutBuffer, uint64_t len){
         Read(OutBuffer, len);
         UpdateReadIndex(len);
     }
+
 
     std::string ReadAsString(uint64_t len){
         assert(len <= GetReadableSize());
@@ -97,7 +117,6 @@ public:
         Read(&str[0], len);
         return str;
     }
-    
     std::string ReadAsStringPop(uint64_t len){
         std::string str = ReadAsString(len);
         UpdateReadIndex(len);
@@ -106,7 +125,7 @@ public:
 
     // void ReadBuffer(Buffer& buffer, uint64_t len){
     //     assert(len <= GetReadableSize());
-    //     buffer.Write(GetReadBegin(), len);
+    //     buffer.Write(GetReadIndex(), len);
     // }
 
     // void ReadBufferPop(Buffer& buffer, uint64_t len){
@@ -126,7 +145,7 @@ public:
     std::string GetLine(){
         char* crlf = FindCRLF();
         if(crlf == nullptr) return "";
-        std::string str = ReadAsString(crlf - GetReadBegin());
+        std::string str = ReadAsString(crlf - GetReadIndex());
         UpdateReadIndex(2);
         return str;
     }
@@ -141,8 +160,6 @@ public:
         _readIndex = 0;
         _writeIndex = 0;
     }
-
-
 };
 
 #endif
