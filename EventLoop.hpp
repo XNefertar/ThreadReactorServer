@@ -6,6 +6,8 @@
 #include <vector>
 #include <cassert>
 #include <functional>
+#include <condition_variable>
+#include <unistd.h>
 #include <sys/eventfd.h>
 #include "Log.hpp"
 #include "Poller.hpp"
@@ -19,7 +21,7 @@ private:
     int _EventFd;
     std::thread::id _ThreadID; // 线程ID
     TimerWheel _TimerWheel; // 定时器模块
-    std::unique_ptr<Channel> _EventChannel;
+    std::unique_ptr<Channel> _EventChannel; // 管理和处理文件描述符上的事件
     Poller _Poller; // 文件描述符监控
     std::vector<Functor> _Tasks; // 任务池
     std::mutex _Mutex;
@@ -143,8 +145,38 @@ class LoopThread
 {
 private:
     std::mutex _Mutex;
-    
+    std::condition_variable _Cond;
+    EventLoop* _Loop;
+    std::thread _Thread;
 
+private:
+    void ThreadEntry(){
+        EventLoop loop;
+        {
+            std::lock_guard lk(_Mutex);
+            _Loop = &loop;
+            _Cond.notify_one();
+        }
+        loop.Start();
+    }
+
+public:
+    LoopThread()
+        :_Loop(nullptr)
+        ,_Thread(std::bind(&LoopThread::ThreadEntry, this))
+    {}
+
+    EventLoop* GetLoop(){
+        EventLoop* loop = nullptr;
+        {
+            std::unique_lock<std::mutex> lock(_Mutex);
+            _Cond.wait(lock, [&](){
+                return _Loop != nullptr;
+            });
+            loop = _Loop;
+        }
+        return loop;
+    }
 };
 
 
@@ -153,8 +185,37 @@ class LoopThreadPool
 private:
     int _ThreadCount;
     int _NextIdx;
-    EventLoop* _Loop;
+    EventLoop* _BaseLoop;
+    std::vector<LoopThread*> _Threads;
+    std::vector<EventLoop*> _Loops;
+public:
+    LoopThreadPool(EventLoop* baseloop)
+        :_ThreadCount(0)
+        ,_NextIdx(0)
+        ,_BaseLoop(baseloop)
+    {}
 
+    void SetThreadCount(int count){
+        _ThreadCount = count;
+    }
+    void Create(){
+        if(_ThreadCount > 0){
+            _Threads.resize(_ThreadCount);
+            _Loops.resize(_ThreadCount);
+            for(int i = 0; i < _ThreadCount; ++i){
+                _Threads[i] = new LoopThread();
+                _Loops[i] = _Threads[i]->GetLoop();
+            }
+        }
+        return;
+    }
+    EventLoop* NextLoop(){
+        if(_ThreadCount == 0){
+            return _BaseLoop;
+        }
+        _NextIdx = (_NextIdx + 1) % _ThreadCount;
+        return _Loops[_NextIdx];
+    }
 };
 
 
