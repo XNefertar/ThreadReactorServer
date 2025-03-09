@@ -283,6 +283,10 @@ public:
         }
         return true;
     }
+
+    int GetFd() const{
+        return _fd;
+    }
 };
 
 
